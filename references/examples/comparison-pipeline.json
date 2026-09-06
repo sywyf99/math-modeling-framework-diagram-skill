@@ -1,0 +1,49 @@
+{
+  "title": "问题二：五类保边势函数的公平比较流程",
+  "subtitle": "除势函数及其形状参数外，样本、初值、约束、求解器和停止准则保持一致",
+  "layout": "comparison",
+  "canvas": "a4-landscape",
+  "control": {
+    "title": "统一控制条件",
+    "items": ["复用 6 组样本", "固定 Ω、U0 与箱约束", "固定求解器", "统一停止准则"]
+  },
+  "nodes": [
+    {
+      "id": "candidate",
+      "step": "01",
+      "title": "候选势函数",
+      "kind": "model",
+      "items": ["平方根与幂函数", "对数与双曲余弦", "对数分式与 Huber", "仅改变形状函数及参数"]
+    },
+    {
+      "id": "tuning",
+      "step": "02",
+      "title": "代表样本选参",
+      "kind": "method",
+      "items": ["使用 50% 噪声样本", "每类扫描 4 个参数", "按 PSNR 固定最优参数"]
+    },
+    {
+      "id": "paired",
+      "step": "03",
+      "title": "全样本配对实验",
+      "kind": "process",
+      "items": ["3 幅图像 × 2 个噪声率", "投影谱梯度单阶段求解", "记录质量与效率指标"]
+    },
+    {
+      "id": "evaluation",
+      "step": "04",
+      "title": "综合评价",
+      "kind": "evaluation",
+      "items": ["质量：PSNR、SSIM、EPI、MAE", "效率：迭代次数与耗时", "稳健性：灵敏度与上限核查"]
+    }
+  ],
+  "edges": [
+    {"from": "candidate", "to": "tuning"},
+    {"from": "tuning", "to": "paired"},
+    {"from": "paired", "to": "evaluation"}
+  ],
+  "result": {
+    "title": "比较结论",
+    "items": ["综合推荐：对数分式势函数", "效率备选：Huber", "同时报告迭代上限边界"]
+  }
+}
