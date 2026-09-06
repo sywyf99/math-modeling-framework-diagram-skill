@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "presets": {
+    "a4-landscape": {
+      "width": 1600,
+      "height": 1131,
+      "margin_x": 78,
+      "margin_y": 62,
+      "header_height": 106,
+      "section_height": 92,
+      "result_height": 150,
+      "footer_height": 80,
+      "gap": 36,
+      "max_columns": 4,
+      "max_card_height": 420,
+      "card_radius": 14
+    },
+    "16x9": {
+      "width": 1600,
+      "height": 900,
+      "margin_x": 70,
+      "margin_y": 48,
+      "header_height": 92,
+      "section_height": 82,
+      "result_height": 118,
+      "footer_height": 38,
+      "gap": 26,
+      "max_columns": 4,
+      "max_card_height": 330,
+      "card_radius": 13
+    }
+  },
+  "palette": {
+    "background": "#FFFFFF",
+    "surface": "#FFFFFF",
+    "text": "#19324D",
+    "muted": "#5B6B7F",
+    "line": "#D9E2EC",
+    "primary": "#2F6FB0",
+    "primary_fill": "#EEF5FC",
+    "condition": "#C47A2C",
+    "condition_fill": "#FFF7ED",
+    "evaluation": "#7652A8",
+    "evaluation_fill": "#F6F2FB",
+    "result": "#2F855A",
+    "result_fill": "#EFF8F3"
+  },
+  "kind_styles": {
+    "input": ["condition", "condition_fill"],
+    "condition": ["condition", "condition_fill"],
+    "data": ["condition", "condition_fill"],
+    "model": ["primary", "primary_fill"],
+    "method": ["primary", "primary_fill"],
+    "process": ["primary", "primary_fill"],
+    "evaluation": ["evaluation", "evaluation_fill"],
+    "validation": ["evaluation", "evaluation_fill"],
+    "result": ["result", "result_fill"],
+    "conclusion": ["result", "result_fill"],
+    "default": ["primary", "primary_fill"]
+  }
+}
