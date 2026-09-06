@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.DS_Store
+Thumbs.db
+
+output/
+qa-output/
+*.quality-report.json
+*.logic-evidence.json
+*.logic-evidence.md
+*.logic-review.json
+*.logic-check.json
+
