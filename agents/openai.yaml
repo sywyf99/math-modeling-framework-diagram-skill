@@ -1,8 +1,8 @@
 interface:
   display_name: "数学建模框架图"
-  short_description: "生成、质检并核对论文原文逻辑的可编辑框架图"
+  short_description: "生成、压缩、质检并核对原文逻辑的可编辑框架图"
   brand_color: "#2F6FB0"
-  default_prompt: "使用 $math-modeling-framework-diagram，把我的论文或建模方案生成论文级框架图，自动核对图中逻辑与原文，并交付 PNG、SVG 和可编辑 draw.io。"
+  default_prompt: "使用 $math-modeling-framework-diagram，把我的论文、建模方案或旧式流程图提示词整理成论文级框架图，自动压缩冗余信息、核对图中逻辑与原文，并交付 PNG、SVG 和可编辑 draw.io。"
 
 policy:
   allow_implicit_invocation: true
