@@ -45,6 +45,25 @@
     "result": "#2F855A",
     "result_fill": "#EFF8F3"
   },
+  "themes": {
+    "journal": {},
+    "teal": {
+      "primary": "#0F766E",
+      "primary_fill": "#ECFDF5"
+    },
+    "blue": {
+      "primary": "#2F6FB0",
+      "primary_fill": "#EEF5FC"
+    },
+    "mint": {
+      "primary": "#2F855A",
+      "primary_fill": "#EFF8F3"
+    },
+    "orange": {
+      "primary": "#C56A1A",
+      "primary_fill": "#FFF7ED"
+    }
+  },
   "kind_styles": {
     "input": ["condition", "condition_fill"],
     "condition": ["condition", "condition_fill"],
