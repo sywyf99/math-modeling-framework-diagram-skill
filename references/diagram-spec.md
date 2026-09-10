@@ -9,6 +9,8 @@
   "title": "问题一：需求预测与库存优化框架",
   "layout": "pipeline",
   "canvas": "a4-landscape",
+  "theme": "blue",
+  "series": {"id": "competition-2026", "index": 1, "count": 4, "label": "问题一"},
   "nodes": [
     {
       "id": "data_input",
@@ -39,6 +41,8 @@
 | `subtitle` | 否 | 实验边界或补充说明 |
 | `layout` | 否 | 默认 `pipeline`；还支持 `comparison`、`swimlane`、`hub`、`hierarchy` |
 | `canvas` | 否 | 默认 `a4-landscape`；答辩使用 `16x9` |
+| `theme` | 否 | 主色主题：`journal`、`teal`、`blue`、`mint`、`orange` |
+| `series` | 否 | 同一赛题多图的系列 ID、当前序号、总数和短标签 |
 | `control` | 否 | 共享输入、统一样本、约束、求解器和停止准则 |
 | `nodes` | 是 | 1–40 个节点；超过 16 个时优先考虑复杂图工具 |
 | `edges` | 否 | 有向边；省略时按节点顺序自动连接 |
@@ -58,6 +62,16 @@
 - `source_terms`：原文中实际出现、用于绑定证据的模型名、变量、公式片段、参数值或结论短语。
 
 边使用 `from`、`to` 和可选 `label`。显然的顺序关系不写标签；数据类型、约束传递或跨问题依赖可以写短标签。有论文原文时，可给关键边增加 `source_terms`，用于检索能够证明这条关系的原文短语。
+
+省略 `edges` 时会按节点顺序自动连接；显式写 `"edges": []` 表示节点并行、不得自动串联。`control.to` 可指定条件带作用的入口节点，`result.from` 可指定汇入结果带的节点；省略时分别选择图的根节点和汇节点。
+
+`series` 示例：
+
+```json
+{"id": "lunar-transport", "index": 2, "count": 4, "label": "问题二"}
+```
+
+同一 `series.id` 应保持相同 `canvas`、布局密度、字号和术语风格。不同题可使用不同 `theme`，但输入、评价、结论等语义色仍具有更高优先级。
 
 用户提供了论文、赛题原文或解题文档时，构建完成后继续执行 [论文原文一致性自检](logic-audit.md)。
 
@@ -126,3 +140,5 @@ problem_2_framework.quality-report.json
 其中 `.spec.json` 是后续修改入口；`.drawio` 是原生 mxGraph 节点和边；`.svg` 用于论文；`.png` 用于预览；`.mmd` 便于快速查看语义关系。
 
 有原文时还必须生成 `.logic-evidence.json`、`.logic-review.json` 和最终 `.logic-check.json`；旧审核不能用于已经修改的规格或原文。
+
+旧式图片提示词先按 [旧式框架图提示词转换](prompt-adaptation.md) 生成规格草稿和 `.adaptation-report.json`，再进入上述验证与构建命令。

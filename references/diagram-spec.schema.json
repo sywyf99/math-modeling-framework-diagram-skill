@@ -15,6 +15,11 @@
       "type": "string",
       "enum": ["a4-landscape", "16x9"]
     },
+    "theme": {
+      "type": "string",
+      "enum": ["journal", "teal", "blue", "mint", "orange"]
+    },
+    "series": {"$ref": "#/$defs/series"},
     "control": {"$ref": "#/$defs/section"},
     "result": {"$ref": "#/$defs/section"},
     "audit": {"$ref": "#/$defs/audit"},
@@ -53,6 +58,16 @@
           "maxItems": 8
         },
         "source_terms": {"$ref": "#/$defs/source_terms"}
+        ,"to": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"},
+          "uniqueItems": true
+        }
+        ,"from": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$"},
+          "uniqueItems": true
+        }
       }
     },
     "node": {
@@ -95,6 +110,16 @@
       "properties": {
         "required_terms": {"$ref": "#/$defs/source_terms"},
         "notes": {"type": "string"}
+      }
+    },
+    "series": {
+      "type": "object",
+      "required": ["id", "index", "count"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "index": {"type": "integer", "minimum": 1},
+        "count": {"type": "integer", "minimum": 1},
+        "label": {"type": "string"}
       }
     }
   }
