@@ -12,6 +12,8 @@
 - 自动检查文字溢出、节点碰撞、连线交叉、画布越界和可编辑性。
 - 有论文原文时，检查节点、关系、步骤顺序、模型、公式、参数和结论是否与原文一致。
 - 审核结果绑定原文与图规格的 SHA-256，能识别过期审核和伪造引文。
+- 可把 `GLOBAL STYLE / LAYOUT / DETAILS` 一类旧式图片提示词压缩为可执行 JSON 草稿，并保留完整追溯报告。
+- 支持青绿、蓝、薄荷绿、橙色系列主题和多问题图号，在统一视觉体系下分别成图。
 
 ## 最简单的使用方式
 
@@ -59,6 +61,22 @@ python .\scripts\diagram_toolkit.py build `
 | `*.quality-report.json` | 自动布局与视觉质量报告 |
 
 同名输出默认不会覆盖，会自动生成 `_v2`。只有确定要替换旧文件时才使用 `--overwrite`。
+
+## 转换旧式框架图提示词
+
+如果已有一份写给图片生成模型的长提示词，先转换为紧凑规格：
+
+```powershell
+python .\scripts\prompt_adapter.py `
+  --input "flowchart_prompt_1.txt" `
+  --output .\output\problem_1.spec.json `
+  --series-id "lunar-transport" `
+  --series-index 1 `
+  --series-count 4 `
+  --series-label "问题一"
+```
+
+转换器会把主模块和核心步骤放入规格，把三级细节与模糊连线保存在 `*.adaptation-report.json`。该结果仍是草稿：需要统一成论文语言、检查关系，并在有论文原文时继续执行一致性审核。
 
 ## 论文原文一致性自检
 
@@ -123,12 +141,14 @@ math-modeling-framework-diagram-skill/
 ├─ assets/layout-presets.json       # 版式参数
 ├─ scripts/
 │  ├─ diagram_toolkit.py            # 检查、排版与多格式构建
+│  ├─ prompt_adapter.py              # 旧式长提示词的结构化压缩转换
 │  ├─ logic_audit.py                # 原文证据与逻辑审核验证
 │  └─ render_png.py                 # PNG 渲染后备
 └─ references/
    ├─ visual-system.md              # 论文级视觉系统
    ├─ diagram-spec.md               # JSON 规格与命令
    ├─ diagram-spec.schema.json      # 图规格 Schema
+   ├─ prompt-adaptation.md           # 长提示词转换、压缩与审查规则
    ├─ logic-audit.md                # 一致性自检流程
    ├─ logic-review.schema.json      # AI 审核 Schema
    └─ examples/                     # 可运行示例
