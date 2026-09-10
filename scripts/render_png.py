@@ -85,8 +85,11 @@ def draw_band(raster: Raster, section: dict[str, Any], rect: dt.Rect, role: str)
     stroke = p["condition"] if role == "control" else p["result"]
     fill = p["condition_fill"] if role == "control" else p["result_fill"]
     raster.rounded_rect(rect, 14, fill, stroke, 1.5)
-    title_w = min(230.0, rect.w * 0.19)
-    raster.text((rect.x + 24, rect.y + rect.h / 2 + 2), section.get("title", ""), 18, stroke, True, "lm")
+    title_w = min(310.0, rect.w * 0.24)
+    title_lines = dt.wrap_text(section.get("title", ""), title_w - 48.0, 18.0)[:2] or [""]
+    first_title_y = rect.cy - (len(title_lines) - 1) * 11.0
+    for line_index, line in enumerate(title_lines):
+        raster.text((rect.x + 24, first_title_y + line_index * 22.0), line, 18, stroke, True, "lm")
     raster.line([(rect.x + title_w, rect.y + 18), (rect.x + title_w, rect.bottom - 18)], stroke, 1)
     for item, chip in dt.band_item_rects(section, rect, role):
         raster.rounded_rect(chip, 9, "#FFFFFF", stroke, 1)
@@ -178,6 +181,7 @@ def render_spec_to_png(spec_path: Path, output_path: Path, scale: float = 1.5) -
     errors, _ = dt.validate_spec(spec, config)
     if errors:
         raise ValueError("；".join(errors))
+    config = dt.effective_config(spec, config)
     preset = config["presets"][spec["canvas"]]
     layout = dt.compute_layout(spec, preset)
     raster = Raster(int(layout["width"]), int(layout["height"]), scale, config)
@@ -187,6 +191,9 @@ def render_spec_to_png(spec_path: Path, output_path: Path, scale: float = 1.5) -
     raster.text((mx, my + 30), spec["title"], title_size, p["text"], True, "ls")
     if spec.get("subtitle"):
         raster.text((mx, my + 64), spec["subtitle"], 15, p["muted"], False, "ls")
+    label = dt.series_label(spec)
+    if label:
+        raster.text((layout["width"] - mx, my + 31), label, 13, p["muted"], True, "ra")
     divider_y = my + float(preset["header_height"]) - 16
     raster.line([(mx, divider_y), (layout["width"] - mx, divider_y)], p["line"], 1)
     if layout.get("control"):
@@ -194,6 +201,12 @@ def render_spec_to_png(spec_path: Path, output_path: Path, scale: float = 1.5) -
     for lane in layout.get("lanes", []):
         draw_lane(raster, lane)
     positions: dict[str, dt.Rect] = layout["nodes"]
+    if layout.get("control"):
+        for node_id in dt.section_link_ids(spec, "control"):
+            draw_arrow(raster, path_points(dt.band_path(layout["control"], positions[node_id], "up")))
+    if layout.get("result"):
+        for node_id in dt.section_link_ids(spec, "result"):
+            draw_arrow(raster, path_points(dt.band_path(positions[node_id], layout["result"], "down")))
     for edge in spec.get("edges", []):
         path, label_point = dt.edge_path(positions[edge["from"]], positions[edge["to"]], spec["layout"])
         draw_arrow(raster, path_points(path))

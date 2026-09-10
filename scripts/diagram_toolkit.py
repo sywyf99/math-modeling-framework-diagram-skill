@@ -78,6 +78,24 @@ def load_presets() -> dict[str, Any]:
     return load_json(PRESETS_PATH)
 
 
+def effective_config(spec: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    """Return a per-diagram color configuration without mutating shared presets."""
+    result = copy.deepcopy(config)
+    theme = spec.get("theme", "journal")
+    overlay = result.get("themes", {}).get(theme, {})
+    result["palette"].update(overlay)
+    return result
+
+
+def series_label(spec: dict[str, Any]) -> str:
+    series = spec.get("series")
+    if not isinstance(series, dict):
+        return ""
+    prefix = str(series.get("label", "")).strip()
+    counter = f"{series.get('index')}/{series.get('count')}"
+    return f"{prefix}  {counter}".strip()
+
+
 def text_units(value: str) -> float:
     total = 0.0
     for char in value:
@@ -150,6 +168,7 @@ def normalize_spec(raw: dict[str, Any]) -> dict[str, Any]:
     spec = copy.deepcopy(raw)
     spec.setdefault("layout", "pipeline")
     spec.setdefault("canvas", "a4-landscape")
+    spec.setdefault("theme", "journal")
     spec.setdefault("subtitle", "")
     nodes = spec.setdefault("nodes", [])
     for index, node in enumerate(nodes):
@@ -165,7 +184,7 @@ def normalize_spec(raw: dict[str, Any]) -> dict[str, Any]:
             elif isinstance(section, dict):
                 section.setdefault("title", "")
                 section["items"] = normalize_items(section.get("items"))
-    if not spec.get("edges") and len(nodes) > 1:
+    if ("edges" not in spec or spec.get("edges") is None) and len(nodes) > 1:
         spec["edges"] = [
             {"from": nodes[index]["id"], "to": nodes[index + 1]["id"], "label": ""}
             for index in range(len(nodes) - 1)
@@ -201,6 +220,25 @@ def validate_spec(spec: dict[str, Any], config: dict[str, Any]) -> tuple[list[st
     canvas = spec.get("canvas", "a4-landscape")
     if canvas not in config.get("presets", {}):
         errors.append(f"不支持的 canvas：{canvas}。")
+    theme = spec.get("theme", "journal")
+    if theme not in config.get("themes", {"journal": {}}):
+        errors.append(f"不支持的 theme：{theme}。")
+
+    series = spec.get("series")
+    if series is not None:
+        if not isinstance(series, dict):
+            errors.append("series 必须是对象。")
+        else:
+            index = series.get("index")
+            count = series.get("count")
+            if not isinstance(series.get("id"), str) or not series.get("id", "").strip():
+                errors.append("series.id 必须是非空字符串。")
+            if not isinstance(index, int) or isinstance(index, bool) or index < 1:
+                errors.append("series.index 必须是大于等于 1 的整数。")
+            if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+                errors.append("series.count 必须是大于等于 1 的整数。")
+            if isinstance(index, int) and isinstance(count, int) and index > count:
+                errors.append("series.index 不能大于 series.count。")
 
     nodes = spec.get("nodes")
     if not isinstance(nodes, list) or not nodes:
@@ -226,8 +264,8 @@ def validate_spec(spec: dict[str, Any], config: dict[str, Any]) -> tuple[list[st
         items = node.get("items", [])
         if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
             errors.append(f"nodes[{index}].items 必须是字符串数组。")
-        elif len(items) > 6:
-            warnings.append(f"节点 {node_id or index} 超过 6 个正文项，建议压缩或拆分。")
+        elif len(items) > 5:
+            warnings.append(f"节点 {node_id or index} 超过 5 个正文项，建议压缩或拆分。")
         if any(len(item) > 56 for item in items if isinstance(item, str)):
             warnings.append(f"节点 {node_id or index} 含过长正文项，可能需要人工改写为短句。")
         validate_source_terms(node, f"nodes[{index}]")
@@ -236,6 +274,20 @@ def validate_spec(spec: dict[str, Any], config: dict[str, Any]) -> tuple[list[st
         errors.append("节点 ID 重复：" + "、".join(duplicates))
 
     valid_ids = set(ids)
+
+    for section_name, link_field in (("control", "to"), ("result", "from")):
+        section = spec.get(section_name)
+        if not isinstance(section, dict) or link_field not in section:
+            continue
+        linked = section.get(link_field)
+        if not isinstance(linked, list) or any(not isinstance(item, str) for item in linked):
+            errors.append(f"{section_name}.{link_field} 必须是节点 ID 字符串数组。")
+            continue
+        missing = [item for item in linked if item not in valid_ids]
+        if missing:
+            errors.append(f"{section_name}.{link_field} 指向不存在的节点：" + "、".join(missing))
+        if len(set(linked)) != len(linked):
+            errors.append(f"{section_name}.{link_field} 不能包含重复节点。")
     edges = spec.get("edges", [])
     if not isinstance(edges, list):
         errors.append("edges 必须是数组。")
@@ -335,7 +387,8 @@ def layout_regions(spec: dict[str, Any], preset: dict[str, Any]) -> dict[str, An
     }
 
 
-def pipeline_positions(nodes: list[dict[str, Any]], main: Rect, preset: dict[str, Any]) -> dict[str, Rect]:
+def pipeline_positions(spec: dict[str, Any], main: Rect, preset: dict[str, Any]) -> dict[str, Rect]:
+    nodes = spec["nodes"]
     count = len(nodes)
     if count <= 4:
         columns = count
@@ -350,6 +403,15 @@ def pipeline_positions(nodes: list[dict[str, Any]], main: Rect, preset: dict[str
     columns = max(1, min(columns, count))
     rows = math.ceil(count / columns)
     gap = float(preset["gap"])
+    if rows == 1 and count > 1:
+        adjacent = {(nodes[index]["id"], nodes[index + 1]["id"]) for index in range(count - 1)}
+        label_widths = [
+            text_units(edge.get("label", "")) * 12.0 + 32.0
+            for edge in spec.get("edges", [])
+            if (edge.get("from"), edge.get("to")) in adjacent and edge.get("label")
+        ]
+        if label_widths:
+            gap = max(gap, min(160.0, max(label_widths)))
     card_w = min(520.0, (main.w - gap * (columns - 1)) / columns)
     available_h = (main.h - gap * (rows - 1)) / rows
     card_h = min(float(preset["max_card_height"]), available_h)
@@ -480,7 +542,7 @@ def compute_layout(spec: dict[str, Any], preset: dict[str, Any]) -> dict[str, An
     main = layout["main"]
     mode = spec["layout"]
     if mode in {"pipeline", "comparison"}:
-        positions = pipeline_positions(spec["nodes"], main, preset)
+        positions = pipeline_positions(spec, main, preset)
     elif mode == "swimlane":
         positions, lanes = swimlane_positions(spec, main, preset)
         layout["lanes"] = lanes
@@ -499,6 +561,56 @@ def rectangles_overlap(a: Rect, b: Rect, padding: float = 1.0) -> bool:
         or a.bottom + padding <= b.y
         or b.bottom + padding <= a.y
     )
+
+
+def path_points(value: str) -> list[tuple[float, float]]:
+    numbers = [float(item) for item in re.findall(r"-?\d+(?:\.\d+)?", value)]
+    return list(zip(numbers[0::2], numbers[1::2]))
+
+
+def proper_segment_intersection(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    d: tuple[float, float],
+    epsilon: float = 1e-6,
+) -> bool:
+    def cross(p: tuple[float, float], q: tuple[float, float], r: tuple[float, float]) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    ab_c, ab_d = cross(a, b, c), cross(a, b, d)
+    cd_a, cd_b = cross(c, d, a), cross(c, d, b)
+    if (ab_c > epsilon and ab_d < -epsilon or ab_c < -epsilon and ab_d > epsilon) and (
+        cd_a > epsilon and cd_b < -epsilon or cd_a < -epsilon and cd_b > epsilon
+    ):
+        return True
+    if abs(ab_c) <= epsilon and abs(ab_d) <= epsilon and abs(cd_a) <= epsilon and abs(cd_b) <= epsilon:
+        x_overlap = min(max(a[0], b[0]), max(c[0], d[0])) - max(min(a[0], b[0]), min(c[0], d[0]))
+        y_overlap = min(max(a[1], b[1]), max(c[1], d[1])) - max(min(a[1], b[1]), min(c[1], d[1]))
+        return max(x_overlap, y_overlap) > 2.0
+    return False
+
+
+def segment_hits_rect(
+    start: tuple[float, float], end: tuple[float, float], rect: Rect, padding: float = 2.0
+) -> bool:
+    left, right = rect.x - padding, rect.right + padding
+    top, bottom = rect.y - padding, rect.bottom + padding
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    t_min, t_max = 0.0, 1.0
+    for origin, delta, low, high in ((start[0], dx, left, right), (start[1], dy, top, bottom)):
+        if abs(delta) < 1e-9:
+            if origin < low or origin > high:
+                return False
+            continue
+        first, second = (low - origin) / delta, (high - origin) / delta
+        if first > second:
+            first, second = second, first
+        t_min = max(t_min, first)
+        t_max = min(t_max, second)
+        if t_min > t_max:
+            return False
+    return t_max - t_min > 1e-4
 
 
 def estimate_card_lines(node: dict[str, Any], rect: Rect) -> tuple[int, int]:
@@ -535,6 +647,45 @@ def analyze_layout(spec: dict[str, Any], layout: dict[str, Any]) -> tuple[list[s
         minimum_height = 96.0 + item_count * 38.0 + max(0, item_count - 1) * 10.0
         if item_count and rect.h < minimum_height:
             warnings.append(f"节点 {node_id} 的卡片高度不足以容纳 {item_count} 个结构化条目。")
+
+    routed_edges: list[tuple[dict[str, Any], list[tuple[float, float]]]] = []
+    label_fit_issues = 0
+    edge_node_intrusions = 0
+    for edge in spec.get("edges", []):
+        source_rect, target_rect = positions[edge["from"]], positions[edge["to"]]
+        route, _ = edge_path(source_rect, target_rect, spec["layout"])
+        points = path_points(route)
+        routed_edges.append((edge, points))
+        label = edge.get("label", "")
+        if label and abs(source_rect.cy - target_rect.cy) < 8:
+            horizontal_gap = max(target_rect.x - source_rect.right, source_rect.x - target_rect.right)
+            required = text_units(label) * 12.0 + 20.0
+            if horizontal_gap + 1e-6 < required:
+                label_fit_issues += 1
+        for node_id, rect in positions.items():
+            if node_id in {edge["from"], edge["to"]}:
+                continue
+            if any(segment_hits_rect(points[index], points[index + 1], rect) for index in range(len(points) - 1)):
+                edge_node_intrusions += 1
+                warnings.append(f"连线 {edge['from']} → {edge['to']} 可能穿过节点 {node_id}。")
+                break
+    if label_fit_issues:
+        warnings.append(f"有 {label_fit_issues} 条横向连线的标签空间不足。")
+
+    edge_crossings = 0
+    for left_index, (left_edge, left_points) in enumerate(routed_edges):
+        for right_edge, right_points in routed_edges[left_index + 1 :]:
+            if {left_edge["from"], left_edge["to"]} & {right_edge["from"], right_edge["to"]}:
+                continue
+            crossed = any(
+                proper_segment_intersection(left_points[a], left_points[a + 1], right_points[b], right_points[b + 1])
+                for a in range(len(left_points) - 1)
+                for b in range(len(right_points) - 1)
+            )
+            if crossed:
+                edge_crossings += 1
+    if edge_crossings:
+        warnings.append(f"检测到 {edge_crossings} 处不共享端点的连线交叉。")
     total_node_area = sum(rect.w * rect.h for rect in positions.values())
     main: Rect = layout["main"]
     utilization = total_node_area / max(1.0, main.w * main.h)
@@ -546,6 +697,9 @@ def analyze_layout(spec: dict[str, Any], layout: dict[str, Any]) -> tuple[list[s
         "canvas_ratio": round(width / height, 3),
         "node_count": len(positions),
         "edge_count": len(spec.get("edges", [])),
+        "edge_crossings": edge_crossings,
+        "edge_node_intrusions": edge_node_intrusions,
+        "edge_label_fit_issues": label_fit_issues,
         "main_area_node_utilization": round(utilization, 3),
     }
     return errors, warnings, metrics
@@ -590,6 +744,31 @@ def edge_path(source: Rect, target: Rect, mode: str) -> tuple[str, tuple[float, 
     return path, ((sx + tx) / 2, mid_y)
 
 
+def band_path(source: Rect, target: Rect, direction: str) -> str:
+    """Connect a card to a full-width control/result band with a stable vertical route."""
+    if direction == "down":
+        x = min(max(source.cx, target.x + 28.0), target.right - 28.0)
+        return f"M {fmt(source.cx)} {fmt(source.bottom)} L {fmt(x)} {fmt(target.y)}"
+    x = min(max(target.cx, source.x + 28.0), source.right - 28.0)
+    return f"M {fmt(x)} {fmt(source.bottom)} L {fmt(target.cx)} {fmt(target.y)}"
+
+
+def section_link_ids(spec: dict[str, Any], role: str) -> list[str]:
+    section = spec.get(role)
+    if not isinstance(section, dict):
+        return []
+    field = "to" if role == "control" else "from"
+    explicit = section.get(field)
+    if isinstance(explicit, list):
+        return explicit
+    edges = spec.get("edges", [])
+    if role == "control":
+        incoming = {edge["to"] for edge in edges}
+        return [node["id"] for node in spec["nodes"] if node["id"] not in incoming]
+    outgoing = {edge["from"] for edge in edges}
+    return [node["id"] for node in spec["nodes"] if node["id"] not in outgoing]
+
+
 def node_colors(node: dict[str, Any], config: dict[str, Any]) -> tuple[str, str]:
     palette = config["palette"]
     keys = config["kind_styles"].get(node.get("kind", "default"), config["kind_styles"]["default"])
@@ -600,7 +779,7 @@ def band_item_rects(section: dict[str, Any], rect: Rect, role: str) -> list[tupl
     items = section.get("items", [])
     if not items:
         return []
-    title_w = min(230.0, rect.w * 0.19)
+    title_w = min(310.0, rect.w * 0.24)
     content_x = rect.x + title_w + 20
     content_w = rect.right - 18 - content_x
     gap = 10.0
@@ -632,13 +811,18 @@ def render_band(section: dict[str, Any], rect: Rect, role: str, config: dict[str
         stroke, fill = palette["condition"], palette["condition_fill"]
     else:
         stroke, fill = palette["result"], palette["result_fill"]
-    title_w = min(230.0, rect.w * 0.19)
+    title_w = min(310.0, rect.w * 0.24)
+    title_lines = wrap_text(section.get("title", ""), title_w - 48.0, 18.0)[:2] or [""]
     parts = [
         f'<g class="{role}-band">',
         f'<rect x="{fmt(rect.x)}" y="{fmt(rect.y)}" width="{fmt(rect.w)}" height="{fmt(rect.h)}" rx="14" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>',
-        f'<text x="{fmt(rect.x + 24)}" y="{fmt(rect.y + rect.h / 2 + 6)}" font-size="18" font-weight="700" fill="{stroke}">{xml_escape(section.get("title", ""))}</text>',
         f'<line x1="{fmt(rect.x + title_w)}" y1="{fmt(rect.y + 18)}" x2="{fmt(rect.x + title_w)}" y2="{fmt(rect.bottom - 18)}" stroke="{stroke}" stroke-opacity="0.28"/>',
     ]
+    first_title_y = rect.cy - (len(title_lines) - 1) * 11.0 + 6.0
+    for line_index, line in enumerate(title_lines):
+        parts.append(
+            f'<text x="{fmt(rect.x + 24)}" y="{fmt(first_title_y + line_index * 22)}" font-size="18" font-weight="700" fill="{stroke}">{xml_escape(line)}</text>'
+        )
     for item, chip in band_item_rects(section, rect, role):
         parts.append(
             f'<rect x="{fmt(chip.x)}" y="{fmt(chip.y)}" width="{fmt(chip.w)}" height="{fmt(chip.h)}" rx="9" fill="#FFFFFF" fill-opacity="0.88" stroke="{stroke}" stroke-opacity="0.22"/>'
@@ -739,6 +923,11 @@ def generate_svg(spec: dict[str, Any], layout: dict[str, Any], config: dict[str,
         parts.append(
             f'<text x="{fmt(mx)}" y="{fmt(my + 67)}" font-size="15" fill="{palette["muted"]}">{xml_escape(spec["subtitle"])}</text>'
         )
+    label = series_label(spec)
+    if label:
+        parts.append(
+            f'<text x="{fmt(width - mx)}" y="{fmt(my + 31)}" text-anchor="end" font-size="13" font-weight="700" fill="{palette["muted"]}">{xml_escape(label)}</text>'
+        )
     divider_y = my + float(preset["header_height"]) - 16
     parts.append(
         f'<line x1="{fmt(mx)}" y1="{fmt(divider_y)}" x2="{fmt(width - mx)}" y2="{fmt(divider_y)}" stroke="{palette["line"]}"/>'
@@ -749,6 +938,16 @@ def generate_svg(spec: dict[str, Any], layout: dict[str, Any], config: dict[str,
         parts.append(render_lane(lane, config))
 
     positions: dict[str, Rect] = layout["nodes"]
+    if layout.get("control"):
+        for node_id in section_link_ids(spec, "control"):
+            parts.append(
+                f'<path d="{band_path(layout["control"], positions[node_id], "up")}" fill="none" stroke="{palette["condition"]}" stroke-opacity="0.65" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/>'
+            )
+    if layout.get("result"):
+        for node_id in section_link_ids(spec, "result"):
+            parts.append(
+                f'<path d="{band_path(positions[node_id], layout["result"], "down")}" fill="none" stroke="{palette["muted"]}" stroke-width="1.8" marker-end="url(#arrow)"/>'
+            )
     for edge_index, edge in enumerate(spec.get("edges", [])):
         if edge["from"] not in positions or edge["to"] not in positions:
             continue
@@ -839,6 +1038,15 @@ def generate_drawio(spec: dict[str, Any], layout: dict[str, Any], config: dict[s
             f"text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=13;fontColor={palette['muted']};",
             Rect(78, 82, layout["width"] - 156, 30),
         )
+    label = series_label(spec)
+    if label:
+        add_vertex(
+            root,
+            "series_label",
+            f"<b>{html.escape(label)}</b>",
+            f"text;html=1;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;fontFamily=Microsoft YaHei;fontSize=11;fontColor={palette['muted']};",
+            Rect(layout["width"] - 390, 40, 312, 32),
+        )
     for lane in layout.get("lanes", []):
         lane_rect: Rect = lane["rect"]
         add_vertex(
@@ -886,6 +1094,34 @@ def generate_drawio(spec: dict[str, Any], layout: dict[str, Any], config: dict[s
             f"rounded=1;arcSize=12;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fillColor={palette['result_fill']};strokeColor={palette['result']};strokeWidth=1.5;fontFamily=Microsoft YaHei;fontSize=13;fontColor={palette['text']};",
             layout["result"],
         )
+    if layout.get("control"):
+        for index, node_id in enumerate(section_link_ids(spec, "control")):
+            edge_cell = ET.SubElement(
+                root,
+                "mxCell",
+                id=f"control_edge_{index}",
+                value="",
+                style=f"edgeStyle=orthogonalEdgeStyle;rounded=1;dashed=1;dashPattern=5 5;html=1;strokeColor={palette['condition']};strokeWidth=1.25;endArrow=block;endFill=1;endSize=7;",
+                edge="1",
+                parent="1",
+                source="control_band",
+                target=f"node_{node_id}",
+            )
+            ET.SubElement(edge_cell, "mxGeometry", relative="1", **{"as": "geometry"})
+    if layout.get("result"):
+        for index, node_id in enumerate(section_link_ids(spec, "result")):
+            edge_cell = ET.SubElement(
+                root,
+                "mxCell",
+                id=f"result_edge_{index}",
+                value="",
+                style=f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor={palette['muted']};strokeWidth=1.5;endArrow=block;endFill=1;endSize=7;",
+                edge="1",
+                parent="1",
+                source=f"node_{node_id}",
+                target="result_band",
+            )
+            ET.SubElement(edge_cell, "mxGeometry", relative="1", **{"as": "geometry"})
     ET.indent(mxfile, space="  ")
     return ET.tostring(mxfile, encoding="unicode", xml_declaration=True) + "\n"
 
@@ -1157,6 +1393,7 @@ def command_validate(args: argparse.Namespace) -> int:
         print(json.dumps({"passed": False, "errors": [str(exc)], "warnings": []}, ensure_ascii=False, indent=2))
         return 2
     errors, warnings = validate_spec(spec, config)
+    config = effective_config(spec, config)
     if not errors:
         preset = config["presets"][spec["canvas"]]
         layout = compute_layout(spec, preset)
@@ -1185,6 +1422,7 @@ def command_build(args: argparse.Namespace) -> int:
     try:
         spec = normalize_spec(load_json(args.spec))
         spec_errors, spec_warnings = validate_spec(spec, config)
+        config = effective_config(spec, config)
         errors.extend(spec_errors)
         warnings.extend(spec_warnings)
     except Exception as exc:  # noqa: BLE001
@@ -1206,6 +1444,9 @@ def command_build(args: argparse.Namespace) -> int:
     errors.extend(layout_errors)
     warnings.extend(layout_warnings)
     metrics.update(layout_metrics)
+    metrics["theme"] = spec.get("theme", "journal")
+    if isinstance(spec.get("series"), dict):
+        metrics["series"] = spec["series"]
 
     spec_path = output_dir / f"{stem}.spec.json"
     spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
